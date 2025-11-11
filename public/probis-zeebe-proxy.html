@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <title>ProBis Controller — Zeebe RPC + Camunda REST API (FastAPI)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --bg:#0f172a; --card:#111827; --muted:#9ca3af; --line:#1f2937; --btn:#0b1220; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: ui-sans-serif, system-ui; background:var(--bg); color:#e5e7eb; }
+    .wrap { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+    .card { background: var(--card); border:1px solid var(--line); border-radius: 12px; padding: 16px; margin: 12px 0; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; }
+    .row>* { flex:1 1 240px; }
+    label { display:block; font-size:12px; color:#cbd5e1; margin:4px 0; }
+    input, textarea { width:100%; padding:10px 12px; border-radius:10px; border:1px solid #334155; background:var(--btn); color:#e5e7eb; outline:none; }
+    textarea { min-height:120px; resize:vertical; }
+    .btn { display:inline-flex; align-items:center; gap:8px; padding:9px 12px; border-radius:10px; border:1px solid #334155; background:var(--btn); color:#e5e7eb; cursor:pointer; }
+    .btn.primary { background:#0369a1; border-color:#0ea5e9; }
+    .btn.ok { background:#166534; border-color:#16a34a; }
+    .btn.warn { background:#b45309; border-color:#f59e0b; }
+    .muted { color:var(--muted); font-size:12px; }
+    details { border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-bottom:10px; }
+    summary { list-style:none; padding:12px 14px; background:#0b1220; cursor:pointer; font-weight:600; }
+    .step { padding:12px 14px; background:#0b1220; }
+    .log { font-family:ui-monospace, Menlo, monospace; background:#0b1220; border:1px solid var(--line); border-radius:10px; padding:10px; height:260px; overflow:auto; white-space:pre-wrap; }
+    .task-details { 
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+      background: #ffffff; 
+      border: 1px solid #ddd; 
+      border-radius: 8px; 
+      padding: 15px; 
+      max-height: 400px; 
+      overflow-y: auto; 
+      font-size: 13px; 
+      line-height: 1.4;
+      color: #333;
+    }
+    .task-details .section {
+      margin-bottom: 12px;
+      padding: 8px;
+      border-radius: 4px;
+      border-left: 3px solid #007bff;
+    }
+    .task-details .section.summary { background-color: #e8f5e8; border-left-color: #28a745; }
+    .task-details .section.variables { background-color: #fff3cd; border-left-color: #ffc107; }
+    .task-details .section.data { background-color: #d1ecf1; border-left-color: #17a2b8; }
+    .task-details .section.json { background-color: #f8f9fa; border-left-color: #6c757d; }
+    .task-details .variable-item {
+      margin: 4px 0;
+      padding: 6px 8px;
+      background: #ffffff;
+      border: 1px solid #e9ecef;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+    .task-details .variable-name { font-weight: bold; color: #495057; }
+    .task-details .variable-type { color: #6c757d; font-size: 11px; }
+    .task-details .variable-value { color: #007bff; }
+    .task-details pre { 
+      background: #f8f9fa; 
+      padding: 10px; 
+      border-radius: 4px; 
+      overflow-x: auto; 
+      font-size: 11px; 
+      margin: 8px 0; 
+      border: 1px solid #dee2e6;
+    }
+    table { width:100%; border-collapse: collapse; }
+    th, td { border:1px solid #334155; padding:8px; text-align:left; font-size:12px; }
+    th { background:#0b1220; }
+    code { background:#0b1220; padding:0 4px; border-radius:6px; border:1px solid #1f2937; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h2 style="margin:0 0 8px;">ProBis Controller — Zeebe RPC + Camunda REST API</h2>
+      <div class="muted" style="margin-bottom:12px; padding:10px; background:#7c2d12; border-radius:8px; border:1px solid #dc2626;">
+        ⚠️ <strong>User Task operations require Camunda 8 REST API</strong> running on port 8080. 
+        Basic Zeebe operations (start, message, cancel) work without it.
+      </div>
+      <div class="row">
+        <div>
+          <label>Base URL (FastAPI Proxy)</label>
+          <input id="base" value="http://localhost:8001" />
+        </div>
+        <div>
+          <label>BPMN Process ID</label>
+          <input id="bpmnId" value="order-process" />
+        </div>
+        <div>
+          <label>Version (kosong = latest)</label>
+          <input id="version" />
+        </div>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <div>
+          <label>Message Name</label>
+          <input id="msgName" value="order_confirmed" />
+        </div>
+        <div>
+          <label>Correlation Key</label>
+          <input id="corrKey" value="ORD-001" />
+        </div>
+        <div>
+          <label>Process Instance Key</label>
+          <input id="piKey" placeholder="2251799813..." />
+        </div>
+      </div>
+      <div class="hr" style="height:1px;background:#1f2937;margin:10px 0"></div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn primary" onclick="window.startProcess()">▶️ Start</button>
+        <button class="btn" onclick="window.checkHealth()">❤️ Health</button>
+        <button class="btn" onclick="window.clearLog()">🧹 Clear Log</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="font-weight:600;">Variables (JSON)</div>
+        <div class="muted">Dipakai saat Start/Message</div>
+      </div>
+      <textarea id="vars">{
+  "orderId": "ORD-001",
+  "customerEmail": "user@example.com",
+  "amount": 50000
+}</textarea>
+      <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="btn" onclick="window.pretty()">✨ Pretty</button>
+        <button class="btn" onclick="window.setNormal()">✅ Amount Normal</button>
+        <button class="btn" onclick="window.setBig()">💥 Amount &gt; Limit</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 8px;">Start Process dengan File Attachment</h3>
+      <div class="row">
+        <div>
+          <label>Upload File (Optional)</label>
+          <input type="file" id="processFile" />
+        </div>
+      </div>
+      <div style="margin-top:8px;">
+        <button class="btn primary" onclick="window.startProcessWithFile()">🔗 Start Process + Upload File</button>
+      </div>
+      <div class="muted" style="margin-top:6px;">
+        File akan di-upload dan path-nya ditambahkan sebagai variable "attachedFile" ke process instance.
+      </div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin:0 0 8px;">Flow (Collapsible)</h3>
+
+      <details open>
+        <summary>1) Receive Order → Start Process</summary>
+        <div class="step">
+          <button class="btn primary" onclick="window.startProcess()">Start Instance</button>
+          <div class="muted" style="margin-top:6px;">Memanggil <code>POST /rpc/start</code></div>
+        </div>
+      </details>
+
+
+      <details>
+        <summary>2) User Task Ops (Tanpa Tasklist API)</summary>
+        <div class="step">
+          <div class="row">
+            <div>
+              <label>Assignee</label>
+              <input id="assignee" value="demo" />
+            </div>
+            <div>
+              <label>User Task Key</label>
+              <input id="utKey" placeholder="2251799813..." />
+            </div>
+          </div>
+          <div style="margin-top:8px; display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="btn" onclick="window.fetchTasks()">📋 List Tasks</button>
+            <button class="btn" onclick="window.assignTask()">🤝 Assign</button>
+            <button class="btn" onclick="window.unassignTask()">🔄 Unassign</button>
+            <button class="btn ok" onclick="window.completeTask()">✅ Complete</button>
+            <button class="btn primary" onclick="window.getTaskDetails()">🔍 Get Details (Pretty JSON)</button>
+          </div>
+          <div style="margin-top:10px; overflow:auto">
+            <table id="taskTable">
+              <thead>
+                <tr>
+                  <th>UserTaskKey</th><th>Name</th><th>Assignee</th><th>PI Key</th><th>FormKey</th><th>Timestamp</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div style="margin-top:12px;">
+            <div style="font-weight:600; margin-bottom:8px;">Task Details (Pretty JSON)</div>
+            <div id="taskDetails" class="task-details">
+              Select a task and click "Get Details" to see formatted task information with variables
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details>
+        <summary>3) (Opsional) Deploy BPMN dari Path Server</summary>
+        <div class="step">
+          <div class="row">
+            <div>
+              <label>Server BPMN Path (contoh: <code>./bpmn/order-process.bpmn</code>)</label>
+              <input id="bpmnPath" placeholder="./bpmn/order-process.bpmn" />
+            </div>
+          </div>
+          <div style="margin-top:8px;">
+            <button class="btn" onclick="window.deployBPMN()">📦 Deploy</button>
+          </div>
+          <div class="muted" style="margin-top:6px;">
+            Endpoint <code>/rpc/deploy</code> menerima path file di SERVER (bukan upload dari browser).
+          </div>
+        </div>
+      </details>
+
+      <details>
+        <summary>4) Upload & Deploy BPMN File</summary>
+        <div class="step">
+          <div class="row">
+            <div>
+              <label>Select BPMN File (.bpmn atau .bpmn20.xml)</label>
+              <input type="file" id="bpmnFile" accept=".bpmn,.bpmn20.xml" />
+            </div>
+            <div>
+              <label>Process Name (optional)</label>
+              <input id="processName" placeholder="my-process" />
+            </div>
+          </div>
+          <div style="margin-top:8px;">
+            <button class="btn primary" onclick="window.uploadDeployBPMN()">📤 Upload & Deploy</button>
+          </div>
+          <div class="muted" style="margin-top:6px;">
+            Upload file BPMN dari browser dan deploy langsung ke Zeebe. File akan disimpan di server dalam folder <code>uploads/</code>.
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="font-weight:600;">Log</div>
+        <button class="btn" onclick="window.clearLog()">Clear</button>
+      </div>
+      <div id="log" class="log"></div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (s) => document.querySelector(s);
+    const base = () => $('#base').value.replace(/\/+$/, '');
+    const vars = () => JSON.parse($('#vars').value || '{}');
+    const logEl = $('#log');
+    function logLine(...a) {
+      const line = a.map(x => (typeof x === 'string' ? x : JSON.stringify(x, null, 2))).join(' ');
+      logEl.textContent += line + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    function setTable(rows) {
+      const tb = $('#taskTable tbody');
+      tb.innerHTML = '';
+      rows.forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = '<td>'+r.userTaskKey+'</td><td>'+ (r.taskName||'') +'</td><td>'+ (r.assignee||'') +'</td><td>'+r.processInstanceKey+'</td><td>'+ (r.formKey||'') +'</td><td>'+ (r.timestamp||'') +'</td>';
+        tr.onclick = () => { $('#utKey').value = r.userTaskKey; };
+        tb.appendChild(tr);
+      });
+    }
+
+    // Window API
+    window.clearLog = function () { logEl.textContent=''; };
+    window.pretty = function () { try { $('#vars').value = JSON.stringify(vars(), null, 2);} catch(e){ alert('JSON tidak valid'); } };
+    window.setNormal = function () { try { const v = vars(); v.amount = 50000; $('#vars').value = JSON.stringify(v, null, 2);} catch{} };
+    window.setBig = function () { try { const v = vars(); v.amount = 2000000; $('#vars').value = JSON.stringify(v, null, 2);} catch{} };
+
+    window.checkHealth = async function () {
+      try { const r = await fetch(`${base()}/rpc/health`); logLine('❤️ /rpc/health →', await r.json()); }
+      catch(e){ logLine('❌ /rpc/health', String(e)); }
+    };
+
+    window.startProcess = async function () {
+      const body = { bpmnProcessId: $('#bpmnId').value.trim(), variables: vars() };
+      const v = $('#version').value.trim(); if (v) body.version = Number(v);
+      try {
+        logLine('▶️ /rpc/start →', body);
+        const r = await fetch(`${base()}/rpc/start`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        const data = await r.json(); logLine('✅ /rpc/start ←', data);
+        if (data.processInstanceKey) $('#piKey').value = data.processInstanceKey;
+      } catch(e){ logLine('❌ /start', String(e)); }
+    };
+
+    window.publishMessage = async function () {
+      const body = { messageName: $('#msgName').value.trim(), correlationKey: $('#corrKey').value.trim(), variables: vars() };
+      try {
+        logLine('📨 /rpc/message →', body);
+        const r = await fetch(`${base()}/rpc/message`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        logLine('✅ /rpc/message ←', await r.json());
+      } catch(e){ logLine('❌ /message', String(e)); }
+    };
+
+    window.cancelInstance = async function () {
+      const key = $('#piKey').value.trim(); if (!key) return alert('Isi Process Instance Key');
+      const body = { processInstanceKey: Number(key) };
+      try {
+        logLine('⏹️ /rpc/cancel →', body);
+        const r = await fetch(`${base()}/rpc/cancel`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        logLine('✅ /rpc/cancel ←', await r.json());
+      } catch(e){ logLine('❌ /cancel', String(e)); }
+    };
+
+    window.deployBPMN = async function () {
+      const p = $('#bpmnPath').value.trim(); if (!p) return alert('Isi path');
+      const body = { bpmnPath: p };
+      try {
+        logLine('📦 /rpc/deploy →', body);
+        const r = await fetch(`${base()}/rpc/deploy`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        logLine('✅ /rpc/deploy ←', await r.json());
+      } catch(e){ logLine('❌ /deploy', String(e)); }
+    };
+
+    window.uploadDeployBPMN = async function () {
+      const fileInput = $('#bpmnFile');
+      const file = fileInput.files[0];
+      if (!file) return alert('Pilih file BPMN terlebih dahulu');
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      const processName = $('#processName').value.trim();
+      if (processName) formData.append('process_name', processName);
+      
+      try {
+        logLine('📤 Upload & Deploy BPMN →', { filename: file.name, size: file.size });
+        const r = await fetch(`${base()}/rpc/deploy-upload`, { 
+          method: 'POST', 
+          body: formData 
+        });
+        const result = await r.json();
+        logLine('✅ Upload & Deploy ←', result);
+        
+        // Update process ID if deployment successful
+        if (result.ok && result.processes && result.processes.length > 0) {
+          $('#bpmnId').value = result.processes[0].bpmnProcessId;
+          logLine('📝 Process ID updated to:', result.processes[0].bpmnProcessId);
+        }
+      } catch(e){ 
+        logLine('❌ Upload & Deploy', String(e)); 
+      }
+    };
+
+    window.startProcessWithFile = async function () {
+      const fileInput = $('#processFile');
+      const file = fileInput.files[0];
+      
+      const formData = new FormData();
+      formData.append('bpmnProcessId', $('#bpmnId').value.trim());
+      formData.append('variables', JSON.stringify(vars()));
+      
+      const version = $('#version').value.trim();
+      if (version) formData.append('version', version);
+      if (file) formData.append('file', file);
+      
+      try {
+        logLine('▶️ Start Process with File →', { 
+          processId: $('#bpmnId').value, 
+          variables: vars(),
+          filename: file ? file.name : 'no file'
+        });
+        const r = await fetch(`${base()}/rpc/start-with-file`, { 
+          method: 'POST', 
+          body: formData 
+        });
+        const data = await r.json(); 
+        logLine('✅ Start Process ←', data);
+        if (data.processInstanceKey) $('#piKey').value = data.processInstanceKey;
+      } catch(e){ 
+        logLine('❌ Start Process with File', String(e)); 
+      }
+    };
+
+    // User Task ops
+    window.fetchTasks = async function () {
+      const a = $('#assignee').value.trim();
+      try {
+        const r = await fetch(`${base()}/rpc/tasks?assignee=${encodeURIComponent(a)}`);
+        const data = await r.json();
+        logLine('📋 /rpc/tasks ←', data);
+        setTable(data.tasks || []);
+      } catch(e){ logLine('❌ /rpc/tasks', String(e)); }
+    };
+
+    window.assignTask = async function () {
+      const key = Number($('#utKey').value.trim()); const a = $('#assignee').value.trim();
+      if (!key) return alert('Isi UserTaskKey');
+      try {
+        const r = await fetch(`${base()}/rpc/user-task/assign`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userTaskKey:key, assignee:a, allowOverride:true }) });
+        logLine('🤝 /rpc/user-task/assign ←', await r.json());
+      } catch(e){ logLine('❌ /user-task/assign', String(e)); }
+    };
+
+    window.unassignTask = async function () {
+      const key = Number($('#utKey').value.trim());
+      if (!key) return alert('Isi UserTaskKey');
+      try {
+        const r = await fetch(`${base()}/rpc/user-task/unassign`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ userTaskKey:key }) });
+        logLine('🔄 /rpc/user-task/unassign ←', await r.json());
+      } catch(e){ logLine('❌ /user-task/unassign', String(e)); }
+    };
+
+    window.completeTask = async function () {
+      const key = Number($('#utKey').value.trim());
+      if (!key) return alert('Isi UserTaskKey');
+      const body = { userTaskKey: key, variables: vars() };
+      try {
+        const r = await fetch(`${base()}/rpc/user-task/complete`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+        logLine('✅ /rpc/user-task/complete ←', await r.json());
+      } catch(e){ logLine('❌ /user-task/complete', String(e)); }
+    };
+
+    window.getTaskDetails = async function () {
+      const key = $('#utKey').value.trim();
+      if (!key) return alert('Isi UserTaskKey terlebih dahulu');
+      
+      const detailsEl = $('#taskDetails');
+      detailsEl.textContent = 'Loading task details...';
+      
+      try {
+        logLine('🔍 Getting task details for key:', key);
+        const r = await fetch(`${base()}/rpc/user-task/${key}/pretty`);
+        const data = await r.json();
+        
+        if (data.ok) {
+          // Create structured display for task details with variables highlighting
+          const formatted = data.formatted;
+          let detailsHtml = '';
+          
+          // Task summary
+          detailsHtml += `<div class="section summary">`;
+          detailsHtml += `<strong>📋 Task Summary</strong><br>`;
+          detailsHtml += `<strong>Task Key:</strong> ${formatted.userTaskKey}<br>`;
+          detailsHtml += `<strong>Task Name:</strong> ${formatted.taskName || 'N/A'}<br>`;
+          detailsHtml += `<strong>Assignee:</strong> ${formatted.assignee || 'Unassigned'}<br>`;
+          detailsHtml += `<strong>State:</strong> ${formatted.state}<br>`;
+          detailsHtml += `<strong>Process Instance:</strong> ${formatted.processInstanceKey}<br>`;
+          detailsHtml += `</div>`;
+          
+          // Variables summary
+          if (formatted.variables && formatted.variables.summary) {
+            const varSummary = formatted.variables.summary;
+            detailsHtml += `<div class="section variables">`;
+            detailsHtml += `<strong>🔢 Variables Summary</strong><br>`;
+            detailsHtml += `<strong>Count:</strong> ${varSummary.count}<br>`;
+            if (varSummary.count > 0) {
+              detailsHtml += `<strong>Names:</strong> ${varSummary.names.join(', ')}<br>`;
+              detailsHtml += `<strong>Types:</strong> ${JSON.stringify(varSummary.types)}<br>`;
+            }
+            detailsHtml += `</div>`;
+            
+            // Variables data
+            if (varSummary.count > 0) {
+              detailsHtml += `<div class="section data">`;
+              detailsHtml += `<strong>📝 Variables Data</strong><br>`;
+              for (const [name, varData] of Object.entries(formatted.variables.data)) {
+                detailsHtml += `<div class="variable-item">`;
+                detailsHtml += `<span class="variable-name">${name}</span> `;
+                detailsHtml += `<span class="variable-type">(${varData.type})</span><br>`;
+                detailsHtml += `<span class="variable-value">${JSON.stringify(varData.value)}</span>`;
+                detailsHtml += `</div>`;
+              }
+              detailsHtml += `</div>`;
+            }
+          }
+          
+          // Full JSON (collapsed by default)
+          detailsHtml += `<div class="section json">`;
+          detailsHtml += `<strong>📄 Full JSON Response</strong><br>`;
+          detailsHtml += `<details style="margin-top: 8px;"><summary style="cursor: pointer; color: #007bff;">Click to expand full JSON</summary>`;
+          detailsHtml += `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+          detailsHtml += `</details>`;
+          detailsHtml += `</div>`;
+          
+          detailsEl.innerHTML = detailsHtml;
+          logLine('✅ Task details loaded successfully with variables:', formatted.variables?.summary);
+        } else {
+          detailsEl.textContent = JSON.stringify(data, null, 2);
+          logLine('❌ Failed to get task details:', data.error);
+        }
+      } catch(e) { 
+        detailsEl.textContent = `Error: ${String(e)}`;
+        logLine('❌ Error getting task details:', String(e)); 
+      }
+    };
+  </script>
+</body>
+</html>

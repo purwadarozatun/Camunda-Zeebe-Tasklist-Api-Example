@@ -1,0 +1,81 @@
+syntax = "proto3";
+
+package user_task_protocol;
+
+option java_multiple_files = true;
+option java_package = "io.camunda.zeebe.user.task.protocol";
+option go_package = "./;usertaskpb";
+
+service UserTaskGateway {
+  // User Task operations
+  rpc CompleteUserTask (CompleteUserTaskRequest) returns (CompleteUserTaskResponse);
+  rpc AssignUserTask (AssignUserTaskRequest) returns (AssignUserTaskResponse);
+  rpc UnassignUserTask (UnassignUserTaskRequest) returns (UnassignUserTaskResponse);
+  rpc GetUserTask (GetUserTaskRequest) returns (GetUserTaskResponse);
+}
+
+// User Task Messages
+
+message CompleteUserTaskRequest {
+  // the unique identifier of the user task
+  int64 user_task_key = 1;
+  // a JSON document that will be merged into the process instance variables
+  string variables = 2;
+  // list of variable names which describes the names of the variables to be used by a job worker
+  repeated string fetch_variables = 3;
+}
+
+message CompleteUserTaskResponse {
+  // intentionally empty
+}
+
+message AssignUserTaskRequest {
+  // the unique identifier of the user task
+  int64 user_task_key = 1;
+  // the assignee of the user task
+  string assignee = 2;
+  // whether to allow overriding the assignment if there is already one
+  bool allow_overriding_assignment = 3;
+}
+
+message AssignUserTaskResponse {
+  // intentionally empty
+}
+
+message UnassignUserTaskRequest {
+  // the unique identifier of the user task
+  int64 user_task_key = 1;
+}
+
+message UnassignUserTaskResponse {
+  // intentionally empty
+}
+
+message GetUserTaskRequest {
+  // the unique identifier of the user task
+  int64 user_task_key = 1;
+}
+
+message GetUserTaskResponse {
+  // the unique identifier of the user task
+  int64 user_task_key = 1;
+  // the assignee of the user task
+  string assignee = 2;
+  // the element id of the user task
+  string element_id = 3;
+  // the process instance key
+  int64 process_instance_key = 4;
+  // the form key
+  string form_key = 5;
+  // a JSON document as process instance variables
+  string variables = 6;
+  // the state of the user task
+  UserTaskState state = 7;
+}
+
+enum UserTaskState {
+  USER_TASK_STATE_UNKNOWN = 0;
+  USER_TASK_STATE_CREATED = 1;
+  USER_TASK_STATE_COMPLETED = 2;
+  USER_TASK_STATE_CANCELED = 3;
+}
