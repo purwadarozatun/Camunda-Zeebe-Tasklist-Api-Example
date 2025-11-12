@@ -1012,6 +1012,241 @@ curl -X POST "http://localhost:8001/rpc/variables/search" \
   }'
 ```
 
+## 🤖 Job Worker - WhatsApp Notification
+
+Project ini menyertakan job worker untuk menangani pengiriman notifikasi WhatsApp dalam workflow Camunda.
+
+### File Worker
+
+**Files:**
+- `worker_notifikasi_wa_simple.py` - Skeleton dasar (memerlukan perbaikan untuk pyzeebe 4.7.0)
+- `worker_simple_working.py` - Mock version untuk testing
+- `worker_wa_fixed.py` - **✅ pyzeebe 4.7.0 Compatible Version** (Recommended)
+
+Worker ini menangani job dengan nama `kirim-notifikasi-wa` dan bertugas untuk mengirim notifikasi WhatsApp kepada customer dalam workflow business process.
+
+### Setup & Usage
+
+#### 1. Setup Environment
+```bash
+# Aktivasi virtual environment
+source venv/bin/activate
+
+# Install pyzeebe 4.7.0
+pip install pyzeebe==4.7.0
+
+# Pastikan Zeebe running di localhost:26500
+```
+
+#### 2. Test Worker Locally
+```bash
+# Test function tanpa koneksi Zeebe
+python worker_wa_fixed.py --test
+```
+
+#### 3. Run Real Worker
+```bash
+# Connect ke Zeebe dan tunggu jobs
+python worker_wa_fixed.py
+```
+
+### Job Variables
+
+**Required Variables:**
+- `phone_number` (string) - Nomor HP target (required)
+- `message` (string) - Template pesan dengan placeholder (required)
+
+**Optional Variables:**
+- `customer_name` (string) - Nama customer, default: "Customer"
+- `order_id` (string) - ID pesanan
+
+**Message Template Support:**
+```json
+{
+  "phone_number": "08123456789",
+  "message": "Halo {customer_name}, pesanan {order_id} telah dikonfirmasi pada {timestamp}",
+  "customer_name": "John Doe",
+  "order_id": "ORD-12345"
+}
+```
+
+**Response Variables:**
+- Success: `status`, `sent_at`, `phone_number`, `message_delivered`, `delivery_id`, `message_content`
+- Failed: `status`, `error`, `failed_at`, `phone_number`, `retry_recommended`
+
+### Implementation (pyzeebe 4.7.0)
+
+```python
+#!/usr/bin/env python3
+"""WhatsApp Worker - pyzeebe 4.7.0 Compatible"""
+
+import asyncio
+from pyzeebe import ZeebeWorker, create_insecure_channel
+
+# Create connection
+channel = create_insecure_channel("localhost:26500")
+worker = ZeebeWorker(channel)
+
+# Register job handler
+@worker.task(task_type="kirim-notifikasi-wa")
+def handle_whatsapp_job(
+    phone_number: str,
+    message: str,
+    customer_name: str = "Customer", 
+    order_id: str = ""
+) -> dict:
+    # Process WhatsApp notification
+    return {"status": "success", "delivery_id": "wa_123"}
+
+# Run worker
+async def main():
+    await worker.work()
+
+if __name__ == '__main__':
+    asyncio.run(main())
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("whatsapp-worker")
+
+def kirim_notifikasi_wa(job):
+    """Handler untuk job 'kirim-notifikasi-wa'"""
+    
+    logger.info(f"Processing job: {job.key}")
+    
+    # Extract variables
+    variables = job.variables
+    phone_number = variables.get("phone_number", "")
+    message = variables.get("message", "")
+    
+    # Validasi
+    if not phone_number or not message:
+        return {"status": "failed", "error": "Missing variables"}
+    
+    # Simulasi pengiriman WhatsApp
+    logger.info(f"Sending WhatsApp to: {phone_number}")
+    
+    # TODO: Implementasi API WhatsApp yang sebenarnya
+    # success = send_whatsapp_api(phone_number, message)
+    
+    return {
+        "status": "success",
+        "sent_at": datetime.now().isoformat(),
+        "phone_number": phone_number
+    }
+
+async def main():
+    """Main worker function"""
+    from pyzeebe import ZeebeClient, create_insecure_channel
+    
+    # Create client and worker
+    channel = create_insecure_channel(grpc_address=ZEEBE_ADDRESS)
+    client = ZeebeClient(channel)
+    
+    worker = client.create_worker(
+        task_type=JOB_TYPE,
+        task_handler=kirim_notifikasi_wa,
+        max_jobs_to_activate=3,
+        timeout_ms=30000
+    )
+    
+    logger.info("Worker started! Waiting for jobs...")
+    await worker
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### Testing Worker
+
+Untuk test worker dengan mock job:
+
+```python
+# Test dengan simulasi job
+class MockJob:
+    def __init__(self, variables):
+        self.variables = variables
+        self.key = "test-job-123"
+
+# Test variables
+test_vars = {
+    "phone_number": "08123456789",
+    "message": "Test pesan WhatsApp",
+    "customer_name": "Test Customer"
+}
+
+# Run test
+result = kirim_notifikasi_wa(MockJob(test_vars))
+print(f"Test result: {result}")
+```
+
+### Integration dengan BPMN
+
+Dalam BPMN, tambahkan Service Task dengan:
+
+**Task Definition:**
+- **Type:** `kirim-notifikasi-wa`
+- **Input Variables:** `phone_number`, `message`
+- **Output Variables:** `wa_status`, `wa_sent_at`
+
+**BPMN Example:**
+```xml
+<bpmn:serviceTask id="SendWhatsApp" name="Kirim Notifikasi WA">
+  <bpmn:extensionElements>
+    <zeebe:taskDefinition type="kirim-notifikasi-wa" />
+    <zeebe:ioMapping>
+      <zeebe:input source="customerPhone" target="phone_number" />
+      <zeebe:input source="notificationMessage" target="message" />
+      <zeebe:output source="status" target="wa_status" />
+      <zeebe:output source="sent_at" target="wa_sent_at" />
+    </zeebe:ioMapping>
+  </bpmn:extensionElements>
+</bpmn:serviceTask>
+```
+
+### Production Setup
+
+Untuk production, customize worker dengan:
+
+1. **WhatsApp API Integration**
+   ```python
+   import requests
+   
+   def send_whatsapp_api(phone_number, message):
+       # Implementasi dengan WhatsApp Business API
+       headers = {"Authorization": f"Bearer {API_TOKEN}"}
+       payload = {
+           "messaging_product": "whatsapp",
+           "to": phone_number,
+           "type": "text",
+           "text": {"body": message}
+       }
+       response = requests.post(API_URL, json=payload, headers=headers)
+       return response.status_code == 200
+   ```
+
+2. **Error Handling & Retry**
+   ```python
+   def kirim_notifikasi_wa(job):
+       try:
+           # Attempt to send
+           success = send_whatsapp_api(phone_number, message)
+           if not success:
+               # Return incident untuk retry
+               raise Exception("WhatsApp API failed")
+       except Exception as e:
+           # Log error dan return failure
+           return {"status": "failed", "error": str(e)}
+   ```
+
+3. **Environment Configuration**
+   ```bash
+   # .env file
+   ZEEBE_ADDRESS=localhost:26500
+   WHATSAPP_API_URL=https://graph.facebook.com/v17.0/YOUR_PHONE_ID/messages
+   WHATSAPP_API_TOKEN=your_whatsapp_token
+   ```
+
 ## 🆘 Support & Contact
 
 Untuk pertanyaan atau issue:
